@@ -190,15 +190,19 @@ q6_items = [
 HEADERS = [
     'response_id', 'ts', 'duration_sec', 'email',
     'q1_values', 'q1_adaptation_cnt', 'q1_socialization_cnt', 'q1_individualization_cnt',
+    # ↓↓↓ добавляем сырые Да/Нет по каждому вопросу блока 2
+    *[f'b2_{i}' for i in range(1, 23)],
+    # расчёты по блоку 2
     'b2_extro_score', 'b2_extro_class', 'b2_otro_score', 'b2_otro_class',
+    # дальше как было
     'q3_values', 'q3_reliable_cnt', 'q3_anxious_cnt', 'q3_avoidant_cnt',
     'q4_values', 'q4_free',
     *[f'q5_{name}' for name in q5_items],
     'q5_free_text',
     *[f'q5_{name}_code' for name in q5_items],
-    *[f'q6_{name}' for name in q6_items],      # для «Свой вариант» будет 1/0
+    *[f'q6_{name}' for name in q6_items],
     'q6_free_text',
-    *[f'q6_{name}_any' for name in q6_items],  # для «Свой вариант» тоже 1/0
+    *[f'q6_{name}_any' for name in q6_items],
     'q7_any_dreams', 'q8_2025', 'q9_5y', 'q10_10_20y',
     'sex', 'age', 'edu', 'sector', 'family', 'kids', 'living', 'locality', 'consent'
 ]
@@ -465,7 +469,8 @@ if submitted:
             'q4_values': '; '.join(q4_vals),
             'q4_free': q4_free,
         }
-
+        row.update({f'b2_{i}': b2_answers.get(f'b2_{i}','') for i in range(1,23)})
+        
         # п.5: частоты + «Свой вариант»
         for name in q5_items[:-1]:
             row[f'q5_{name}'] = q5.get(name, '')

@@ -310,7 +310,7 @@ st.subheader('5. Участие в мероприятиях/организаци
 q5 = {}
 for item in q5_items[:-1]:
     q5[item] = st.radio(item, FREQ3, horizontal=True, index=2, key=f'q5_{item}')
-q5_own_enabled = st.checkbox('Свой вариант')
+q5_own_enabled = st.checkbox('Свой вариант', key='q5_own')
 q5['Свой вариант'] = 'Включено' if q5_own_enabled else 'Не выбрано'
 q5_free_text = ''
 if q5_own_enabled:
@@ -323,7 +323,7 @@ q6 = {}
 for item in q6_items[:-1]:  # все КРОМЕ «Свой вариант»
     q6[item] = st.slider(item, min_value=-1, max_value=5, value=0, step=1, key=f'q6_{item}')
 # «Свой вариант» — без «П.6» и без ползунка
-q6_own_enabled = st.checkbox('Свой вариант')
+q6_own_enabled = st.checkbox('Свой вариант', key='q6_own')
 q6['Свой вариант'] = 1 if q6_own_enabled else 0
 q6_free_text = ''
 if q6_own_enabled:
@@ -499,10 +499,5 @@ if submitted:
         try:
             append_to_sheet(HEADERS, row)
             st.success('Ответ принят.')
-            st.info(
-                f'Классификация: {extro_class} (балл={extro_score}); '
-                f'отровертность: {otro_class} (балл={otro_score}); '
-                f'ценности: адаптация={q1_adapt}, социализация={q1_social}, индивидуализация={q1_indiv}.'
-            )
         except Exception as e:
             st.error('Ошибка записи в Google Sheets: ' + str(e))

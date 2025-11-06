@@ -1,8 +1,4 @@
 # -*- coding: utf-8 -*-
-# Анкета Школы коммуникаций НИУ ВШЭ. Источник вопросов — ваш текст.
-# Запись в Google Sheets. Валидации min/max. Подсчёты: блок 2, сводки по п.1 и п.3.
-# Стиль: одинарные кавычки.
-
 import os, re, time, uuid
 from datetime import datetime
 import streamlit as st
@@ -12,21 +8,21 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title='Анкета (Школа коммуникаций НИУ ВШЭ)', page_icon='📝', layout='centered')
 
 # --------------------
-# Конфигурация Google Sheets (диагностика)
+# Конфигурация Google Sheets (диагностика и устойчивое чтение)
 # --------------------
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 SERVICE_INFO = None
 SHEET_ID = None
 
-# 1) читаем gcp_service_account
+# читаем gcp_service_account
 try:
     SERVICE_INFO = dict(st.secrets['gcp_service_account'])
     secrets_gcp_loaded = True
 except Exception:
     secrets_gcp_loaded = False
 
-# 2) пытаемся достать google_sheet_id из разных мест
+# достаём google_sheet_id из разных мест
 try:
     SHEET_ID = st.secrets.get('google_sheet_id', None)
     if not SHEET_ID and 'gcp_service_account' in st.secrets:
@@ -36,15 +32,14 @@ try:
 except Exception:
     SHEET_ID = None
 
-# 3) fallback: переменные окружения
+# fallback: переменные окружения
 if not SHEET_ID:
     SHEET_ID = os.getenv('GOOGLE_SHEET_ID', None)
 
-# выводим ровно то, что используем
+# диагностический вывод (временно; после запуска можно убрать)
 st.sidebar.write('secrets_gcp_loaded:', secrets_gcp_loaded)
 st.sidebar.write('sheet_id_value_present:', bool(SHEET_ID))
 
-# 4) стоп, если чего-то нет
 if not secrets_gcp_loaded or not SHEET_ID:
     if not secrets_gcp_loaded and not SHEET_ID:
         st.error('Нет конфигурации: отсутствуют и [gcp_service_account], и google_sheet_id.')
@@ -54,11 +49,11 @@ if not secrets_gcp_loaded or not SHEET_ID:
         st.error('Нет конфигурации: отсутствует ключ google_sheet_id.')
     st.stop()
 
-# 5) инициализация клиента
+# инициализация клиента
 creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SHEET_ID)
-ws = sh.sheet1
+ws = sh.sheet1  # первый лист
 
 # --------------------
 # Справочники/тексты
@@ -203,15 +198,12 @@ HEADERS = [
     'b2_extro_score', 'b2_extro_class', 'b2_otro_score', 'b2_otro_class',
     'q3_values', 'q3_reliable_cnt', 'q3_anxious_cnt', 'q3_avoidant_cnt',
     'q4_values', 'q4_free',
-    # п.5 — частоты и код
     *[f'q5_{name}' for name in q5_items],
     'q5_free_text',
     *[f'q5_{name}_code' for name in q5_items],
-    # п.6 — числовые значения и бинарные индикаторы
     *[f'q6_{name}' for name in q6_items],
     'q6_free_text',
     *[f'q6_{name}_any' for name in q6_items],
-    # 7–10 + социодем + согласие
     'q7_any_dreams', 'q8_2025', 'q9_5y', 'q10_10_20y',
     'sex', 'age', 'edu', 'sector', 'family', 'kids', 'living', 'locality', 'consent'
 ]
@@ -229,6 +221,9 @@ def validate_multiselect(values, min_sel=None, max_sel=None):
 
 def _valid_email(s):
     return re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', s) is not None
+
+def _has_cyrillic(s):
+    return bool(re.search(r'[А-Яа-яЁё]', s or ''))
 
 def score_block2(ans):
     yes, no = 'Да', 'Нет'
@@ -315,8 +310,6 @@ with st.form('survey', clear_on_submit=False):
     b2_answers = {}
     for i in range(1, 23):
         b2_answers[f'b2_{i}'] = st.radio(f'{i}. {b2_text[i]}', ['Да', 'Нет'], horizontal=True, key=f'k_b2_{i}')
-    # контроль внимания (простая проверка)
-    b2_attn = st.radio('Контроль внимания: выберите «Да» в этом пункте', ['Да', 'Нет'], horizontal=True, key='k_b2_attn')
 
     st.markdown('---')
     st.subheader('3. Реакции на стресс и неопределённость (выберите от 4 до 7 вариантов)')
@@ -326,30 +319,39 @@ with st.form('survey', clear_on_submit=False):
     st.markdown('---')
     st.subheader('4. «Оказавшись в трудной ситуации, я…» (до 3 вариантов)')
     q4_vals = st.multiselect('Можно до 3 вариантов', q4_options, max_selections=3)
-    q4_free = st.text_area('Если выбрали «Свой вариант», опишите', '')
+    q4_free = ''
+    if 'Свой вариант' in q4_vals:
+        q4_free = st.text_area('Опишите «Свой вариант» (обязательно, кириллица)', '')
 
     st.markdown('---')
     st.subheader('5. Участвуете ли вы в следующих мероприятиях/организациях?')
-    st.caption('Отметьте частоту.')
-    q5 = {item: st.select_slider(item, options=FREQ3, value='Никогда') for item in q5_items}
+    st.caption('Отметьте частоту (без ползунков).')
+    q5 = {}
+    for item in q5_items:
+        q5[item] = st.radio(item, FREQ3, horizontal=True, index=2, key=f'q5_{item}')
     q5_free_text = ''
     if q5.get('Свой вариант') in ('Регулярно', 'Иногда'):
-        q5_free_text = st.text_input('П.5 — опишите «Свой вариант»')
+        q5_free_text = st.text_input('П.5 — опишите «Свой вариант» (обязательно, кириллица)')
 
     st.markdown('---')
     st.subheader('6. Интернет-активности за последний год')
     st.caption('Шкала: -1 — намеренно избегаю; 0 — не использовал(а); 5 — очень часто.')
-    q6 = {item: st.slider(item, min_value=-1, max_value=5, value=0) for item in q6_items}
+    q6 = {}
+    for item in q6_items:
+        q6[item] = st.radio(item, [-1, 0, 1, 2, 3, 4, 5], horizontal=True, index=1, key=f'q6_{item}')
     q6_free_text = ''
     if q6.get('Свой вариант', 0) != 0:
-        q6_free_text = st.text_input('П.6 — опишите «Свой вариант»')
+        q6_free_text = st.text_input('П.6 — опишите «Свой вариант» (обязательно, кириллица)')
 
     st.markdown('---')
     st.subheader('7–10. Мечты и горизонты')
     q7 = st.radio('7. Есть ли у вас мечты, которые вы бы хотели реализовать?', ['ДА', 'НЕТ'], horizontal=True)
-    q8 = st.text_area('8. Какую мечту хотели бы реализовать до конца 2025 года?', '')
-    q9 = st.text_area('9. Какие мечты — в ближайшие пять лет?', '')
-    q10 = st.text_area('10. Какие мечты — в ближайшие 10–20 лет?', '')
+
+    q8 = q9 = q10 = ''
+    if q7 == 'ДА':
+        q8 = st.text_area('8. Какую мечту хотели бы реализовать до конца 2025 года?', '')
+        q9 = st.text_area('9. Какие мечты — в ближайшие пять лет?', '')
+        q10 = st.text_area('10. Какие мечты — в ближайшие 10–20 лет?', '')
 
     st.markdown('---')
     st.subheader('Несколько вопросов о вас')
@@ -395,98 +397,123 @@ with st.form('survey', clear_on_submit=False):
     submitted = st.form_submit_button('Отправить')
 
 # --------------------
-# Сабмит
+# Сабмит + валидации
 # --------------------
 if submitted:
     errors = []
+
     if email and not _valid_email(email):
         errors.append('Неверный формат e-mail.')
+
     ok1, msg1 = validate_multiselect(q1_vals, min_sel=3, max_sel=5)
     if not ok1:
         errors.append('Блок 1: ' + msg1)
+
     ok3, msg3 = validate_multiselect(q3_vals, min_sel=4, max_sel=7)
     if not ok3:
         errors.append('Блок 3: ' + msg3)
+
+    # Блок 2 — контроль внимания удалён, проверяем лишь что все отмечены (radio гарантирует)
     missing_b2 = [i for i in range(1, 23) if b2_answers.get(f'b2_{i}') not in ('Да', 'Нет')]
     if missing_b2:
         errors.append(f'Блок 2: ответьте на все вопросы (не отвечено: {len(missing_b2)})')
-    if b2_attn != 'Да':
-        errors.append('Контроль внимания: выберите «Да».')
+
+    # П.4 — если выбран «Свой вариант», текст обязателен и с кириллицей
+    if 'Свой вариант' in q4_vals:
+        if not q4_free or not _has_cyrillic(q4_free):
+            errors.append('П.4: «Свой вариант» — обязательное поле, введите текст кириллицей.')
+
+    # П.5 — если «Свой вариант» ≠ «Никогда», текст обязателен и кириллицей
+    if q5.get('Свой вариант') in ('Регулярно', 'Иногда'):
+        if not q5_free_text or not _has_cyrillic(q5_free_text):
+            errors.append('П.5: «Свой вариант» — обязательное поле, введите текст кириллицей.')
+
+    # П.6 — если «Свой вариант» выбран с уровнем ≠ 0, текст обязателен и кириллицей
+    if q6.get('Свой вариант', 0) != 0:
+        if not q6_free_text or not _has_cyrillic(q6_free_text):
+            errors.append('П.6: «Свой вариант» — обязательное поле, введите текст кириллицей.')
+
+    # 7–10 — если q7 == ДА, 8–10 обязательны и с кириллицей
+    if q7 == 'ДА':
+        if not q8 or not _has_cyrillic(q8):
+            errors.append('П.8: обязательный ответ (текст кириллицей).')
+        if not q9 or not _has_cyrillic(q9):
+            errors.append('П.9: обязательный ответ (текст кириллицей).')
+        if not q10 or not _has_cyrillic(q10):
+            errors.append('П.10: обязательный ответ (текст кириллицей).')
+
     if not consent:
         errors.append('Нужно согласие на участие.')
 
     if errors:
         for e in errors:
             st.error(e)
-    else:
-        response_id = str(uuid.uuid4())
-        duration_sec = int(time.time() - st.session_state['t_start'])
+        st.stop()
 
-        # подсчёты
-        extro_score, extro_class, otro_score, otro_class = score_block2(b2_answers)
-        q1_adapt, q1_social, q1_indiv = orientations_counts_q1(q1_vals)
-        q3_rel, q3_anx, q3_avo = stress_types_counts_q3(q3_vals)
+    # ---- сбор и запись ----
+    response_id = str(uuid.uuid4())
+    duration_sec = int(time.time() - st.session_state['t_start'])
 
-        # сбор строки
-        row = {
-            'response_id': response_id,
-            'ts': datetime.utcnow().isoformat(timespec='seconds'),
-            'duration_sec': duration_sec,
-            'email': email or '',
-            'q1_values': '; '.join(q1_vals),
-            'q1_adaptation_cnt': q1_adapt,
-            'q1_socialization_cnt': q1_social,
-            'q1_individualization_cnt': q1_indiv,
-            'b2_extro_score': extro_score,
-            'b2_extro_class': extro_class,
-            'b2_otro_score': otro_score,
-            'b2_otro_class': otro_class,
-            'q3_values': '; '.join(q3_vals),
-            'q3_reliable_cnt': q3_rel,
-            'q3_anxious_cnt': q3_anx,
-            'q3_avoidant_cnt': q3_avo,
-            'q4_values': '; '.join(q4_vals),
-            'q4_free': q4_free,
-        }
+    extro_score, extro_class, otro_score, otro_class = score_block2(b2_answers)
+    q1_adapt, q1_social, q1_indiv = orientations_counts_q1(q1_vals)
+    q3_rel, q3_anx, q3_avo = stress_types_counts_q3(q3_vals)
 
-        # п.5: частоты + коды
-        for name, v in q5.items():
-            row[f'q5_{name}'] = v
-        row['q5_free_text'] = q5_free_text
-        for name, v in q5.items():
-            row[f'q5_{name}_code'] = MAP_Q5.get(v, '')
+    row = {
+        'response_id': response_id,
+        'ts': datetime.utcnow().isoformat(timespec='seconds'),
+        'duration_sec': duration_sec,
+        'email': email or '',
+        'q1_values': '; '.join(q1_vals),
+        'q1_adaptation_cnt': q1_adapt,
+        'q1_socialization_cnt': q1_social,
+        'q1_individualization_cnt': q1_indiv,
+        'b2_extro_score': extro_score,
+        'b2_extro_class': extro_class,
+        'b2_otro_score': otro_score,
+        'b2_otro_class': otro_class,
+        'q3_values': '; '.join(q3_vals),
+        'q3_reliable_cnt': q3_rel,
+        'q3_anxious_cnt': q3_anx,
+        'q3_avoidant_cnt': q3_avo,
+        'q4_values': '; '.join(q4_vals),
+        'q4_free': q4_free,
+    }
 
-        # п.6: числовые значения + бинарные индикаторы
-        for name, v in q6.items():
-            row[f'q6_{name}'] = v
-        row['q6_free_text'] = q6_free_text
-        for name, v in q6.items():
-            row[f'q6_{name}_any'] = 1 if v > 0 else 0
+    for name, v in q5.items():
+        row[f'q5_{name}'] = v
+    row['q5_free_text'] = q5_free_text
+    for name, v in q5.items():
+        row[f'q5_{name}_code'] = MAP_Q5.get(v, '')
 
-        # 7–10 + социодем
-        row.update({
-            'q7_any_dreams': q7,
-            'q8_2025': q8,
-            'q9_5y': q9,
-            'q10_10_20y': q10,
-            'sex': sex,
-            'age': age,
-            'edu': edu,
-            'sector': sector,
-            'family': family,
-            'kids': kids,
-            'living': living,
-            'locality': locality,
-            'consent': 'yes' if consent else 'no'
-        })
+    for name, v in q6.items():
+        row[f'q6_{name}'] = v
+    row['q6_free_text'] = q6_free_text
+    for name, v in q6.items():
+        row[f'q6_{name}_any'] = 1 if v > 0 else 0
 
-        try:
-            append_to_sheet(HEADERS, row)
-            st.success('Ответ принят. Спасибо!')
-            st.info(
-                f'Классификация: {extro_class} (балл={extro_score}); '
-                f'отровертность: {otro_class} (балл={otro_score}). '
-                f'Ценности: адаптация={q1_adapt}, социализация={q1_social}, индивидуализация={q1_indiv}.'
-            )
-        except Exception as e:
-            st.error('Ошибка записи в Google Sheets: ' + str(e))
+    row.update({
+        'q7_any_dreams': q7,
+        'q8_2025': q8,
+        'q9_5y': q9,
+        'q10_10_20y': q10,
+        'sex': sex,
+        'age': age,
+        'edu': edu,
+        'sector': sector,
+        'family': family,
+        'kids': kids,
+        'living': living,
+        'locality': locality,
+        'consent': 'yes' if consent else 'no'
+    })
+
+    try:
+        append_to_sheet(HEADERS, row)
+        st.success('Ответ принят. Спасибо!')
+        st.info(
+            f'Классификация: {extro_class} (балл={extro_score}); '
+            f'отровертность: {otro_class} (балл={otro_score}). '
+            f'Ценности: адаптация={q1_adapt}, социализация={q1_social}, индивидуализация={q1_indiv}.'
+        )
+    except Exception as e:
+        st.error('Ошибка записи в Google Sheets: ' + str(e))

@@ -17,19 +17,13 @@ except Exception:
     SERVICE_INFO = None
     secrets_gcp_loaded = False
 
-# google_sheet_id может быть в корне secrets или в секции
 sheet_id = None
 try:
     sheet_id = st.secrets.get('google_sheet_id', None)
 except Exception:
     sheet_id = None
-if not sheet_id and secrets_gcp_loaded and 'google_sheet_id' in st.secrets['gcp_service_account']:
-    sheet_id = st.secrets['gcp_service_account']['google_sheet_id']
 if not sheet_id:
     sheet_id = os.getenv('GOOGLE_SHEET_ID')
-
-st.sidebar.write('secrets_gcp_loaded:', secrets_gcp_loaded)
-st.sidebar.write('sheet_id_value_present:', bool(sheet_id))
 
 if not secrets_gcp_loaded or not sheet_id:
     st.error('Нет конфигурации Google Sheets.')
@@ -168,8 +162,7 @@ q6_items = [
     'Жертвование денег на реализацию коммерческих проектов (запись музыкальных альбомов, съёмка фильмов и т.д.)',
     'Жертвование денег на реализацию социальных и благотворительных проектов',
     'Жертвование денег на избирательные и иные политические кампании',
-    'Ничего из перечисленного',
-    'Свой вариант'
+    'Свой вариант'  # только чекбокс + описание (без ползунка)
 ]
 
 HEADERS = [
@@ -181,9 +174,9 @@ HEADERS = [
     *[f'q5_{name}' for name in q5_items],
     'q5_free_text',
     *[f'q5_{name}_code' for name in q5_items],
-    *[f'q6_{name}' for name in q6_items],
+    *[f'q6_{name}' for name in q6_items],      # для «Свой вариант» будет 1/0
     'q6_free_text',
-    *[f'q6_{name}_any' for name in q6_items],
+    *[f'q6_{name}_any' for name in q6_items],  # для «Свой вариант» тоже 1/0
     'q7_any_dreams', 'q8_2025', 'q9_5y', 'q10_10_20y',
     'sex', 'age', 'edu', 'sector', 'family', 'kids', 'living', 'locality', 'consent'
 ]
@@ -251,8 +244,18 @@ def append_to_sheet(headers, row_dict):
 
 # -------------------- UI --------------------
 st.title('Анкета исследования')
-st.caption('Проектно-учебная лаборатория политических коммуникаций, Школа коммуникаций ФКИ НИУ ВШЭ')
-st.markdown('Пожалуйста, ответьте на вопросы. Поля с зависимостями будут появляться сразу.')
+
+# ВСТАВКА ТВОЕГО ИНТРО-ТЕКСТА — СРАЗУ В НАЧАЛЕ
+st.markdown(
+    'Проектно-учебная лаборатория политических коммуникаций Школы коммуникаций факультета креативных индустрий '
+    'НИУ ВШЭ проводит исследование, направленное на анализ особенностей восприятия сообщений общественной и гражданской '
+    'направленности. Мы просим принять участие в нашем исследовании, ответив на вопросы анкеты (это займет…), а также '
+    'если вы готовы принять участие в продолжении исследования в форме фокус-групп и получить подарки от Школы коммуникаций, '
+    'оставьте, пожалуйста, свой электронный адрес ________.\n\n'
+    'Результаты опроса будут использованы только в обобщенном виде, без упоминания имен. '
+    'Ответы на вопросы не требуют особых знаний.\n\n'
+    'Заранее благодарим за участие!'
+)
 
 if 't_start' not in st.session_state:
     st.session_state['t_start'] = time.time()
@@ -285,9 +288,9 @@ st.subheader('5. Участие в мероприятиях/организаци
 q5 = {}
 for item in q5_items[:-1]:
     q5[item] = st.radio(item, FREQ3, horizontal=True, index=2, key=f'q5_{item}')
-q5_own_enabled = st.checkbox('П.5 — свой вариант', value=False)
-q5_free_text = ''
+q5_own_enabled = st.checkbox('Свой вариант')
 q5['Свой вариант'] = 'Включено' if q5_own_enabled else 'Не выбрано'
+q5_free_text = ''
 if q5_own_enabled:
     q5_free_text = st.text_input('Опишите «Свой вариант» (обязательно, кириллица)', '')
 
@@ -295,18 +298,14 @@ st.markdown('---')
 st.subheader('6. Интернет-активности за последний год')
 st.caption('Шкала: -1 — избегаю; 0 — не использовал(а); 5 — очень часто')
 q6 = {}
-for item in q6_items[:-2]:
+for item in q6_items[:-1]:  # все КРОМЕ «Свой вариант»
     q6[item] = st.slider(item, min_value=-1, max_value=5, value=0, step=1, key=f'q6_{item}')
-
-# для последних двух: «Ничего из перечисленного», «Свой вариант»
-q6['Ничего из перечисленного'] = st.checkbox('Ничего из перечисленного', value=False)
-q6_own_enabled = st.checkbox('П.6 — свой вариант', value=False)
+# «Свой вариант» — без «П.6» и без ползунка
+q6_own_enabled = st.checkbox('Свой вариант')
+q6['Свой вариант'] = 1 if q6_own_enabled else 0
 q6_free_text = ''
 if q6_own_enabled:
-    q6['Свой вариант'] = 1   # фиксируем как «есть активность»
     q6_free_text = st.text_input('Опишите «Свой вариант» (обязательно, кириллица)', '')
-else:
-    q6['Свой вариант'] = 0
 
 st.markdown('---')
 st.subheader('7. Есть ли у вас мечты, которые вы бы хотели реализовать?')
@@ -394,7 +393,7 @@ if submitted:
         if not q5_free_text or not _has_cyrillic(q5_free_text):
             errors.append('П.5: «Свой вариант» — обязателен и должен быть на кириллице.')
 
-    if q6_own_enabled:
+    if q6.get('Свой вариант') == 1:
         if not q6_free_text or not _has_cyrillic(q6_free_text):
             errors.append('П.6: «Свой вариант» — обязателен и должен быть на кириллице.')
 
@@ -441,6 +440,7 @@ if submitted:
             'q4_free': q4_free,
         }
 
+        # п.5: частоты + «Свой вариант»
         for name in q5_items[:-1]:
             row[f'q5_{name}'] = q5.get(name, '')
         row['q5_Свой вариант'] = q5.get('Свой вариант', 'Не выбрано')
@@ -449,17 +449,14 @@ if submitted:
             row[f'q5_{name}_code'] = MAP_Q5.get(q5.get(name, ''), '')
         row['q5_Свой вариант_code'] = ''
 
-        # п.6: записываем все
-        for item in q6_items[:-2]:
-            row[f'q6_{item}'] = q6.get(item, 0)
-        row['q6_Ничего из перечисленного'] = 1 if q6['Ничего из перечисленного'] else 0
-        row['q6_Свой вариант'] = 1 if q6_own_enabled else 0
+        # п.6: численные значения + бинарные индикаторы; «Свой вариант» — 1/0 + текст
+        for item in q6_items[:-1]:
+            v = q6.get(item, 0)
+            row[f'q6_{item}'] = v
+            row[f'q6_{item}_any'] = 1 if v > 0 else 0
+        row['q6_Свой вариант'] = q6.get('Свой вариант', 0)
+        row['q6_Свой вариант_any'] = 1 if q6.get('Свой вариант', 0) == 1 else 0
         row['q6_free_text'] = q6_free_text
-
-        for item in q6_items[:-2]:
-            row[f'q6_{item}_any'] = 1 if q6.get(item, 0) > 0 else 0
-        row['q6_Ничего из перечисленного_any'] = 1 if q6['Ничего из перечисленного'] else 0
-        row['q6_Свой вариант_any'] = 1 if q6_own_enabled else 0
 
         row.update({
             'q7_any_dreams': q7,

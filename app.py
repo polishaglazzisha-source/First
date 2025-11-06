@@ -16,62 +16,45 @@ st.set_page_config(page_title='Анкета (Школа коммуникаций
 # --------------------
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# 1) ЯВНО читаем secrets и показываем флаги в сайдбаре
 SERVICE_INFO = None
-# попытки в порядке приоритета
+SHEET_ID = None
+
+# 1) читаем gcp_service_account
 try:
     SERVICE_INFO = dict(st.secrets['gcp_service_account'])
     secrets_gcp_loaded = True
 except Exception:
     secrets_gcp_loaded = False
 
-SHEET_ID = None
+# 2) пытаемся достать google_sheet_id из разных мест
 try:
-    # топ-левел ключ
     SHEET_ID = st.secrets.get('google_sheet_id', None)
-    # иногда люди кладут ID внутрь секции по ошибке
     if not SHEET_ID and 'gcp_service_account' in st.secrets:
         SHEET_ID = st.secrets['gcp_service_account'].get('google_sheet_id', None)
-    # ещё одна частая история — своя секция [app]
     if not SHEET_ID and 'app' in st.secrets:
         SHEET_ID = st.secrets['app'].get('google_sheet_id', None)
 except Exception:
     SHEET_ID = None
 
-# fallback через переменные окружения
+# 3) fallback: переменные окружения
 if not SHEET_ID:
     SHEET_ID = os.getenv('GOOGLE_SHEET_ID', None)
 
+# выводим ровно то, что используем
+st.sidebar.write('secrets_gcp_loaded:', secrets_gcp_loaded)
 st.sidebar.write('sheet_id_value_present:', bool(SHEET_ID))
 
-st.sidebar.write('secrets_gcp_loaded:', secrets_gcp_loaded)
-st.sidebar.write('sheet_id_present:', sheet_id_present)
-
-# 2) Fallback через переменные окружения (если настроены)
-if not secrets_gcp_loaded and os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON'):
-    import json as _pyjson
-    SERVICE_INFO = _pyjson.loads(os.environ['GOOGLE_SERVICE_ACCOUNT_JSON'])
-    secrets_gcp_loaded = True
-    st.sidebar.write('fallback_env_SERVICE_INFO:', True)
-
-if not sheet_id_present and os.getenv('GOOGLE_SHEET_ID'):
-    SHEET_ID = os.environ['GOOGLE_SHEET_ID']
-    sheet_id_present = True
-    st.sidebar.write('fallback_env_SHEET_ID:', True)
-
-# 3) Точный разбор, что не так
-if not secrets_gcp_loaded or not sheet_id_present:
-    if not secrets_gcp_loaded and not sheet_id_present:
+# 4) стоп, если чего-то нет
+if not secrets_gcp_loaded or not SHEET_ID:
+    if not secrets_gcp_loaded and not SHEET_ID:
         st.error('Нет конфигурации: отсутствуют и [gcp_service_account], и google_sheet_id.')
     elif not secrets_gcp_loaded:
         st.error('Нет конфигурации: отсутствует секция [gcp_service_account].')
-    elif not sheet_id_present:
+    else:
         st.error('Нет конфигурации: отсутствует ключ google_sheet_id.')
     st.stop()
 
-# 4) Инициализация клиента
-from google.oauth2.service_account import Credentials
-import gspread
+# 5) инициализация клиента
 creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SHEET_ID)

@@ -172,28 +172,20 @@ q6_items = [
     'Свой вариант'  # без ползунка — чекбокс + описание
 ]
 
-# -------------------- Шапка таблицы (ДОБАВЛЕНЫ СЫРЫЕ b2_1..b2_22) --------------------
+# -------------------- Порядок колонок для записи --------------------
 HEADERS = [
     'response_id', 'ts', 'duration_sec', 'email',
-    # Блок 1
     'q1_values', 'q1_adaptation_cnt', 'q1_socialization_cnt', 'q1_individualization_cnt',
-    # Блок 2 — сырые ответы (Да/Нет)
     *[f'b2_{i}' for i in range(1, 23)],
-    # Блок 2 — суммы/классы
     'b2_extro_score', 'b2_extro_class', 'b2_otro_score', 'b2_otro_class',
-    # Блок 3
     'q3_values', 'q3_reliable_cnt', 'q3_anxious_cnt', 'q3_avoidant_cnt',
-    # Блок 4
     'q4_values', 'q4_free',
-    # Блок 5
     *[f'q5_{name}' for name in q5_items],
     'q5_free_text',
     *[f'q5_{name}_code' for name in q5_items],
-    # Блок 6
-    *[f'q6_{name}' for name in q6_items],      # для «Свой вариант» — 1/0
+    *[f'q6_{name}' for name in q6_items],
     'q6_free_text',
-    *[f'q6_{name}_any' for name in q6_items],  # бинарные индикаторы
-    # 7–10 + социодем + согласие
+    *[f'q6_{name}_any' for name in q6_items],
     'q7_any_dreams', 'q8_2025', 'q9_5y', 'q10_10_20y',
     'sex', 'age', 'edu', 'sector', 'family', 'kids', 'living', 'locality', 'consent'
 ]
@@ -253,65 +245,15 @@ def stress_types_counts_q3(selected_labels):
     avoidant = {2,10,11,12,14,15,20}
     return len(selected_idx & reliable), len(selected_idx & anxious), len(selected_idx & avoidant)
 
-# ---------- Шапка + строка-словарь ----------
-def column_descriptions():
-    d = {}
-    d['response_id'] = 'UUID ответа'
-    d['ts'] = 'UTC timestamp ISO'
-    d['duration_sec'] = 'Время прохождения, сек.'
-    d['email'] = 'E-mail (необяз.)'
-    d['q1_values'] = 'П.1 список выбранных ценностей (через ; )'
-    d['q1_adaptation_cnt'] = 'П.1: адаптация (счётчик)'
-    d['q1_socialization_cnt'] = 'П.1: социализация (счётчик)'
-    d['q1_individualization_cnt'] = 'П.1: индивидуализация (счётчик)'
-    # b2 сырые
-    for i in range(1, 23):
-        d[f'b2_{i}'] = f'П.2: {b2_text[i]} (Да/Нет)'
-    d['b2_extro_score'] = 'П.2: экстраверсия — суммарный балл'
-    d['b2_extro_class'] = 'П.2: экстраверсия — класс'
-    d['b2_otro_score'] = 'П.2: отровертность — суммарный балл'
-    d['b2_otro_class'] = 'П.2: отровертность — класс'
-    d['q3_values'] = 'П.3 список выбранных вариантов (через ; )'
-    d['q3_reliable_cnt'] = 'П.3: надёжные стратегии (счётчик)'
-    d['q3_anxious_cnt'] = 'П.3: тревожные стратегии (счётчик)'
-    d['q3_avoidant_cnt'] = 'П.3: избегающие стратегии (счётчик)'
-    d['q4_values'] = 'П.4 выбранные варианты (через ; )'
-    d['q4_free'] = 'П.4 «Свой вариант» (текст)'
-    for name in q5_items:
-        d[f'q5_{name}'] = f'П.5: {name} — частота/вкл.'
-    d['q5_free_text'] = 'П.5 «Свой вариант» — текст'
-    for name in q5_items:
-        d[f'q5_{name}_code'] = 'П.5: код частоты (Рег.=2, Иногд.=1, Ник.=0; для «Свой вариант» пусто)'
-    for name in q6_items:
-        d[f'q6_{name}'] = f'П.6: {name} — шкала -1..5; для «Свой вариант» 1/0'
-        d[f'q6_{name}_any'] = f'П.6: индикатор активности по «{name}» (>0 → 1)'
-    d['q6_free_text'] = 'П.6 «Свой вариант» — текст'
-    d['q7_any_dreams'] = 'П.7: есть мечты? (ДА/НЕТ)'
-    d['q8_2025'] = 'П.8: мечта до конца 2025 (текст)'
-    d['q9_5y'] = 'П.9: мечты на 5 лет (текст)'
-    d['q10_10_20y'] = 'П.10: мечты на 10–20 лет (текст)'
-    d['sex'] = 'Пол'
-    d['age'] = 'Возраст (полных лет)'
-    d['edu'] = 'Образование'
-    d['sector'] = 'Сфера занятости'
-    d['family'] = 'Семейное положение'
-    d['kids'] = 'Наличие детей'
-    d['living'] = 'Совместное проживание'
-    d['locality'] = 'Место жительства'
-    d['consent'] = 'Согласие (yes/no)'
-    return d
-
-def ensure_headers_and_dict():
-    rows = ws.get_all_values()
-    if not rows:
-        ws.append_row(HEADERS, value_input_option='RAW')
-        desc_map = column_descriptions()
-        desc_row = [desc_map.get(h, '') for h in HEADERS]
-        ws.append_row(desc_row, value_input_option='RAW')
-
+# -------- ТИХАЯ запись без шапки ----------
 def append_to_sheet(headers, row_dict):
-    ensure_headers_and_dict()
-    ws.append_row([row_dict.get(h, '') for h in headers], value_input_option='RAW')
+    # если в первой строке уже есть ваша шапка — выравниваемся по ней
+    try:
+        rows = ws.get_all_values()
+    except Exception:
+        rows = []
+    target_headers = rows[0] if rows else headers
+    ws.append_row([row_dict.get(h, '') for h in target_headers], value_input_option='RAW')
 
 # -------------------- UI --------------------
 st.title('Анкета исследования')
@@ -457,11 +399,9 @@ def append_row():
         'q1_individualization_cnt': q1_indiv,
     }
 
-    # ------ П.2: сырые Да/Нет по каждому вопросу ------
     for i in range(1, 23):
         row[f'b2_{i}'] = b2_answers.get(f'b2_{i}', '')
 
-    # П.2: расчёты
     row.update({
         'b2_extro_score': extro_score,
         'b2_extro_class': extro_class,
@@ -469,7 +409,6 @@ def append_row():
         'b2_otro_class': otro_class,
     })
 
-    # П.3
     row.update({
         'q3_values': '; '.join(q3_vals),
         'q3_reliable_cnt': q3_rel,
@@ -477,11 +416,9 @@ def append_row():
         'q3_avoidant_cnt': q3_avo,
     })
 
-    # П.4
     row['q4_values'] = '; '.join(q4_vals)
     row['q4_free'] = q4_free
 
-    # П.5: частоты + «Свой вариант»
     for name in q5_items[:-1]:
         row[f'q5_{name}'] = q5.get(name, '')
     row['q5_Свой вариант'] = q5.get('Свой вариант', 'Не выбрано')
@@ -490,7 +427,6 @@ def append_row():
         row[f'q5_{name}_code'] = MAP_Q5.get(q5.get(name, ''), '')
     row['q5_Свой вариант_code'] = ''
 
-    # П.6: значения + any; «Свой вариант» — 1/0 + текст
     for name in q6_items[:-1]:
         v = q6.get(name, 0)
         row[f'q6_{name}'] = v
@@ -499,7 +435,6 @@ def append_row():
     row['q6_Свой вариант_any'] = 1 if q6.get('Свой вариант', 0) == 1 else 0
     row['q6_free_text'] = q6_free_text
 
-    # 7–10 + социодем
     row.update({
         'q7_any_dreams': q7,
         'q8_2025': q8,

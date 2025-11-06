@@ -18,19 +18,31 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 # 1) ЯВНО читаем secrets и показываем флаги в сайдбаре
 SERVICE_INFO = None
-SHEET_ID = None
-
+# попытки в порядке приоритета
 try:
     SERVICE_INFO = dict(st.secrets['gcp_service_account'])
     secrets_gcp_loaded = True
 except Exception:
     secrets_gcp_loaded = False
 
+SHEET_ID = None
 try:
-    SHEET_ID = st.secrets['google_sheet_id']
-    sheet_id_present = True
+    # топ-левел ключ
+    SHEET_ID = st.secrets.get('google_sheet_id', None)
+    # иногда люди кладут ID внутрь секции по ошибке
+    if not SHEET_ID and 'gcp_service_account' in st.secrets:
+        SHEET_ID = st.secrets['gcp_service_account'].get('google_sheet_id', None)
+    # ещё одна частая история — своя секция [app]
+    if not SHEET_ID and 'app' in st.secrets:
+        SHEET_ID = st.secrets['app'].get('google_sheet_id', None)
 except Exception:
-    sheet_id_present = False
+    SHEET_ID = None
+
+# fallback через переменные окружения
+if not SHEET_ID:
+    SHEET_ID = os.getenv('GOOGLE_SHEET_ID', None)
+
+st.sidebar.write('sheet_id_value_present:', bool(SHEET_ID))
 
 st.sidebar.write('secrets_gcp_loaded:', secrets_gcp_loaded)
 st.sidebar.write('sheet_id_present:', sheet_id_present)

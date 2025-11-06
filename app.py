@@ -259,10 +259,14 @@ def stress_types_counts_q3(selected_labels):
     return len(selected_idx & reliable), len(selected_idx & anxious), len(selected_idx & avoidant)
 
 def append_to_sheet(headers, row_dict):
-    existing = ws.get_all_values()
-    if not existing:
-        ws.append_row(headers, value_input_option='RAW')
-    ws.append_row([row_dict.get(h, '') for h in headers], value_input_option='RAW')
+    # Строго построчно, без шапки, всегда с колонки A
+    values = [row_dict.get(h, '') for h in headers]
+    ws.append_row(
+        values,
+        value_input_option='RAW',
+        insert_data_option='INSERT_ROWS',
+        table_range='A1'  # форсируем начало с первой колонки
+    )
 
 # -------------------- UI --------------------
 st.title('Анкета исследования')

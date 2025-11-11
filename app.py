@@ -337,6 +337,33 @@ st.markdown(
     'Заранее благодарим за участие!'
 )
 
+# ---- ВСТАВКА ПАТЧА ДЛЯ СТАРЫХ БРАУЗЕРОВ ----
+st.markdown("""
+<script>
+// Функция для определения старого Safari
+function isOldSafari() {
+    var ua = navigator.userAgent;
+    var match = ua.match(/Version\\/([0-9]+)\\.([0-9]+)/);
+    var safari = ua.indexOf("Safari") > -1 && ua.indexOf("Chrome") == -1;
+    if (safari && match) {
+        var major = parseInt(match[1]);
+        return major < 13;  // старые версии Safari <13
+    }
+    return false;
+}
+
+if (isOldSafari()) {
+    // Заглушка: подавляем Markdown с автолинками
+    document.addEventListener("DOMContentLoaded", function() {
+        console.warn("Старый Safari: отключаем автолинки в Markdown для стабильности.");
+        document.querySelectorAll('.stMarkdown').forEach(el => {
+            el.innerHTML = el.innerText;  // просто текст без автолинков
+        });
+    });
+}
+</script>
+""", unsafe_allow_html=True)
+
 if 't_start' not in st.session_state:
     st.session_state['t_start'] = time.time()
 

@@ -7,6 +7,34 @@ from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title='Анкета (Школа коммуникаций НИУ ВШЭ)', page_icon='📝', layout='centered')
 
+import streamlit.components.v1 as components
+
+# Скрываем сообщения об "invalid group specifier" в Firefox
+components.html(
+    """
+    <script>
+    try {
+        // Патч: переопределяем функцию автолинков Markdown
+        if (window.markdownit) {
+            const md = window.markdownit();
+            const old_linkify = md.linkify.match;
+            md.linkify.match = function () {
+                try {
+                    return old_linkify.apply(this, arguments);
+                } catch (e) {
+                    console.warn("Suppressed Markdown regex error:", e);
+                    return null;
+                }
+            };
+        }
+    } catch(e) {
+        console.warn("Suppressed JS error:", e);
+    }
+    </script>
+    """,
+    height=0,
+)
+
 # --------------------
 # Конфигурация Google Sheets (диагностика и устойчивое чтение)
 # --------------------

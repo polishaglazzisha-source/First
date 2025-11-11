@@ -49,12 +49,34 @@ if not secrets_gcp_loaded or not SHEET_ID:
         st.error('Нет конфигурации: отсутствует ключ google_sheet_id.')
     st.stop()
 
-# инициализация клиента
-creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
-gc = gspread.authorize(creds)
-sh = gc.open_by_key(SHEET_ID)
-ws = sh.sheet1  # первый лист
+import gspread
+from gspread.exceptions import APIError
+import streamlit as st
 
+@st.cache_resource(show_spinner=False)
+def get_worksheet():
+    """Создает и кэширует подключение к первому листу Google Sheets."""
+    creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+    return sh.sheet1
+
+def get_safe_worksheet(retries: int = 3, delay: int = 5):
+    """Проверяет, живое ли соединение; при ошибке — пересоздает."""
+    for attempt in range(1, retries + 1):
+        try:
+            ws = get_worksheet()
+            _ = ws.title  # лёгкий запрос, чтобы убедиться, что соединение живое
+            return ws
+        except APIError as e:
+            err_text = str(e)
+            st.warning(f"Ошибка Google Sheets ({err_text[:80]}...) — переподключаемся (попытка {attempt}/{retries})")
+            st.cache_resource.clear()
+            time.sleep(delay)
+    st.error("Не удалось подключиться к Google Sheets после нескольких попыток.")
+    st.stop()
+
+ws = get_safe_worksheet()
 
 # -------------------- справочники --------------------
 q1_options = [
